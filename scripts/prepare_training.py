@@ -32,10 +32,11 @@ TRAINING_DIR = Path("./training")
 WAVS_DIR = DATASET_DIR / "audio"
 METADATA_FILE = DATASET_DIR / "metadata.csv"
 PHONEMES_FILE = DATASET_DIR / "phonemes.csv"
+OOD_TEXTS_FILE = DATASET_DIR / "OOD_texts.txt"
 
 TRAIN_LIST = TRAINING_DIR / "train_list.txt"
 VAL_LIST = TRAINING_DIR / "val_list.txt"
-OOD_FILE = TRAINING_DIR / "OOD_texts.txt"
+OOD_PHONEMES_FILE = TRAINING_DIR / "OOD_phonemes.txt"
 MELS_DIR = TRAINING_DIR / "mels"
 F0_DIR = TRAINING_DIR / "f0"
 
@@ -54,8 +55,10 @@ F_MAX = 8000
 VAL_RATIO = 0.05
 RANDOM_SEED = 42
 
+DEFAULT_LANGUAGE = "pl"
 
-def cmd_prepare():
+
+def cmd_prepare(target_lang: str):
     """Generate train/val lists and optionally precompute mels and F0."""
     TRAINING_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -159,57 +162,47 @@ def cmd_prepare():
     print(f"Wrote {TRAIN_LIST} ({len(train_entries):,} lines)")
     print(f"Wrote {VAL_LIST} ({len(val_entries):,} lines)")
 
-    # ── Write OOD texts (German sentences not in training) ───────────────
-    ood_sentences = [
-        "Die Bundesrepublik Deutschland ist ein demokratischer Staat.",
-        "Morgen wird es regnen, nehmen Sie einen Regenschirm mit.",
-        "Der schnelle braune Fuchs springt über den faulen Hund.",
-        "Können Sie mir bitte den Weg zum Bahnhof zeigen?",
-        "Die Kinder spielen fröhlich im Garten und lachen laut.",
-        "Wissenschaftler haben eine bahnbrechende Entdeckung gemacht.",
-        "Das Frühstück war ausgezeichnet, besonders die frischen Brötchen.",
-        "Im Schwarzwald gibt es viele schöne Wanderwege zu entdecken.",
-        "Die Universität bietet verschiedene Studiengänge für internationale Studenten an.",
-        "Bitte vergessen Sie nicht, die Tür abzuschließen, wenn Sie gehen.",
-        "Der Weihnachtsmarkt in Nürnberg ist weltberühmt für seinen Glühwein.",
-        "Diese Aufgabe erfordert besondere Sorgfalt und Aufmerksamkeit.",
-        "Die Zugverbindung zwischen München und Berlin dauert etwa vier Stunden.",
-        "Könnten Sie mir erklären, wie dieses Gerät funktioniert?",
-        "Das Unternehmen hat im vergangenen Quartal einen Rekordgewinn erzielt.",
-        "Die Bibliothek hat montags bis freitags von acht bis zwanzig Uhr geöffnet.",
-        "Entschuldigen Sie die Verspätung, der Verkehr war heute besonders schlimm.",
-        "Die neue Brücke über den Rhein wird nächstes Jahr fertiggestellt.",
-        "Haben Sie schon einmal die Berliner Philharmoniker live gehört?",
-        "Der Arzt empfiehlt, täglich mindestens dreißig Minuten spazieren zu gehen.",
-    ]
+    # Load OOD sentences (not in the training set)
+    ood_sentences = []
+    if OOD_TEXTS_FILE.exists():
+        with open(OOD_TEXTS_FILE, "r") as ood_file:
+            for sentence in ood_file:
+                sentence = sentence.strip()
+                if sentence:
+                    ood_sentences.append(sentence)
+        print(f"Loaded {len(ood_sentences)} OOD sentences from {OOD_TEXTS_FILE}")
+    else:
+        print(f"INFO: {OOD_TEXTS_FILE} not found, skipping OOD phoneme generation.")
 
     # Convert OOD texts to IPA phonemes
-    try:
-        from misaki import espeak
+    if ood_sentences:
+        try:
+            from tools.phonemes.phonemizer import Phonemizer
 
-        g2p = espeak.EspeakG2P(language="de")
-        ood_phonemes = []
-        for text in ood_sentences:
-            try:
-                ph, _ = g2p(text)
-                ph = ph.replace("\u028f", "y")  # ʏ → y fixup
-                ood_phonemes.append(ph)
-            except Exception:
-                pass
+            phonemizer = Phonemizer(lang_code=target_lang)
+            ood_phonemes = []
+            for text in ood_sentences:
+                try:
+                    ph = phonemizer.phonemize(text)
+                    ood_phonemes.append(ph)
+                except Exception:
+                    pass
 
-        with open(OOD_FILE, "w") as f:
-            f.write("\n".join(ood_phonemes) + "\n")
-        print(f"Wrote {OOD_FILE} ({len(ood_phonemes)} sentences)")
-    except ImportError:
-        print("WARNING: misaki not available, skipping OOD text generation.")
-        print("  Generate OOD_texts.txt on a machine with misaki installed.")
+            with open(OOD_PHONEMES_FILE, "w") as f:
+                f.write("\n".join(ood_phonemes) + "\n")
+            print(f"Wrote {OOD_PHONEMES_FILE} ({len(ood_phonemes)} sentences for {target_lang})")
+        except ImportError:
+            print("WARNING: Phonemizer or misaki not available, skipping OOD phonemes generation.")
+            print("  Generate OOD_phonemes.txt on a machine with all dependencies installed.")
+    else:
+        print(f"INFO: No OOD sentences defined for lang '{target_lang}', skipping OOD generation.")
 
     # ── Summary ──────────────────────────────────────────────────────────
     print(f"\n{'=' * 60}")
     print(f"Training data ready in {TRAINING_DIR}/")
     print(f"  train_list.txt  : {len(train_entries):,} entries")
     print(f"  val_list.txt    : {len(val_entries):,} entries")
-    print(f"  OOD_texts.txt   : out-of-domain German sentences")
+    print(f"  OOD_texts.txt   : out-of-domain sentences for {target_lang}")
     print(f"  Audio dir       : {WAVS_DIR}/")
     print(f"{'=' * 60}")
 
@@ -649,9 +642,14 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
+    parser.add_argument(
+        "--lang",
+        default=DEFAULT_LANGUAGE,
+        help=f"Target language code (default: {DEFAULT_LANGUAGE})",
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    subparsers.add_parser("prepare", help="Generate train/val lists from dataset")
+    p_prepare = subparsers.add_parser("prepare", help="Generate train/val lists from dataset")
     subparsers.add_parser(
         "precompute",
         help="Pre-compute mel spectrograms and F0 (optional, saves GPU time)",
@@ -673,7 +671,7 @@ def main():
     args = parser.parse_args()
 
     if args.command == "prepare":
-        cmd_prepare()
+        cmd_prepare(target_lang=args.lang)
     elif args.command == "precompute":
         cmd_precompute()
     elif args.command == "convert-weights":

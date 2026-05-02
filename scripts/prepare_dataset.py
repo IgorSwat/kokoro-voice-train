@@ -52,7 +52,7 @@ MAX_DURATION_S = 30.0
 MIN_AVG_LOGPROB = -1.0  # Whisper confidence: closer to 0 is better
 MAX_NO_SPEECH_PROB = 0.5  # Reject segments that are likely silence/noise
 MIN_WORDS = 3  # Minimum words in transcription
-TARGET_LANGUAGE = "de"  # ISO 639-1 German
+DEFAULT_LANGUAGE = "pl"  # Polish by default
 
 # ── Whisper model ─────────────────────────────────────────────────────────────
 
@@ -68,7 +68,7 @@ N_SPEAKER_CLUSTERS = None  # None = auto-detect via DBSCAN
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def cmd_transcribe(sample: int | None):
+def cmd_transcribe(sample: int | None, target_lang: str):
     """Transcribe all MP3s using mlx-whisper. Resumable."""
     import mlx_whisper
 
@@ -143,7 +143,7 @@ def cmd_transcribe(sample: int | None):
                 errors += 1
 
     print(f"\nDone. Errors: {errors}")
-    _print_transcription_stats()
+    _print_transcription_stats(target_lang)
 
 
 def _get_duration(path: Path) -> float:
@@ -168,10 +168,10 @@ def _get_duration(path: Path) -> float:
         return 0.0
 
 
-def _print_transcription_stats():
+def _print_transcription_stats(target_lang: str):
     if not TRANSCRIPTIONS_FILE.exists():
         return
-    total = done_de = done_en = done_other = 0
+    total = done_target = done_en = done_other = 0
     total_duration = 0.0
     with open(TRANSCRIPTIONS_FILE) as f:
         for line in f:
@@ -179,8 +179,8 @@ def _print_transcription_stats():
             total += 1
             total_duration += e.get("duration", 0)
             lang = e.get("language", "")
-            if lang == "de":
-                done_de += 1
+            if lang == target_lang:
+                done_target += 1
             elif lang == "en":
                 done_en += 1
             else:
@@ -188,7 +188,7 @@ def _print_transcription_stats():
     print(f"\nTranscription stats:")
     print(f"  Total files   : {total:,}")
     print(f"  Total duration: {total_duration / 3600:.1f}h")
-    print(f"  German (de)   : {done_de:,}  ({done_de / total * 100:.1f}%)")
+    print(f"  Target ({target_lang})   : {done_target:,}  ({done_target / total * 100:.1f}%)")
     print(f"  English (en)  : {done_en:,}  ({done_en / total * 100:.1f}%)")
     print(f"  Other         : {done_other:,}")
 
@@ -198,7 +198,7 @@ def _print_transcription_stats():
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def cmd_filter():
+def cmd_filter(target_lang: str):
     """Filter transcriptions by language, duration, and quality."""
     if not TRANSCRIPTIONS_FILE.exists():
         print("No transcriptions.jsonl found. Run: transcribe first.")
@@ -222,7 +222,7 @@ def cmd_filter():
     kept = []
 
     for e in entries:
-        if e.get("language") != TARGET_LANGUAGE:
+        if e.get("language") != target_lang:
             reasons["wrong_language"] += 1
             continue
         dur = e.get("duration", 0)
@@ -467,7 +467,7 @@ def cmd_drop(speakers_to_drop: list[str]):
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def cmd_format(rename_speakers: list[str] | None):
+def cmd_format(target_lang: str, rename_speakers: list[str] | None):
     """Convert MP3→WAV, generate IPA phonemes, write final dataset."""
     if not SPEAKERS_FILE.exists():
         print("No speakers.jsonl found. Run: cluster first.")
@@ -536,16 +536,10 @@ def cmd_format(rename_speakers: list[str] | None):
     print(f"Converted: {converted}  Skipped (exists): {skipped}  Errors: {errors}")
 
     # Generate IPA phonemes
-    print("Generating IPA phonemes via misaki (espeak-ng German G2P)...")
-    from misaki import espeak
+    print(f"Generating IPA phonemes via misaki ({target_lang} G2P)...")
+    from tools.phonemes.phonemizer import Phonemizer
 
-    g2p = espeak.EspeakG2P(language="de")
-
-    # Phoneme fixup: ʏ (U+028F, short ü) is not in Kokoro's 178-token vocab.
-    # Map it to y (U+0079, long ü) — the duration difference is learned from audio.
-    PHONEME_FIXUPS = {
-        "\u028f": "y",  # ʏ → y (near-close near-front rounded → close front rounded)
-    }
+    phonemizer = Phonemizer(lang_code=target_lang)
 
     metadata_rows = []
     phoneme_rows = []
@@ -559,9 +553,7 @@ def cmd_format(rename_speakers: list[str] | None):
         wav_name = f"{entry['speaker']}/{entry['hash']}.wav"
 
         try:
-            phonemes, _ = g2p(text)
-            for old, new in PHONEME_FIXUPS.items():
-                phonemes = phonemes.replace(old, new)
+            phonemes = phonemizer.phonemize(text)
         except Exception as e:
             ipa_errors += 1
             phonemes = ""
@@ -596,6 +588,7 @@ def cmd_format(rename_speakers: list[str] | None):
     stats = {
         "total_files": len(metadata_rows),
         "total_duration_h": round(total_duration / 3600, 2),
+        "target_lang": target_lang,
         "speakers": {
             spk: {
                 "files": v["files"],
@@ -607,7 +600,7 @@ def cmd_format(rename_speakers: list[str] | None):
     with open(STATS_FILE, "w") as f:
         json.dump(stats, f, indent=2)
 
-    print(f"\nDataset ready:")
+    print(f"\nDataset ready ({target_lang}):")
     print(f"  Files   : {stats['total_files']:,}")
     print(f"  Duration: {stats['total_duration_h']}h")
     print(f"  Speakers: {len(speaker_stats)}")
@@ -622,11 +615,11 @@ def cmd_format(rename_speakers: list[str] | None):
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def cmd_stats():
+def cmd_stats(target_lang: str):
     """Print statistics for each stage that has been completed."""
     if TRANSCRIPTIONS_FILE.exists():
         print("=== Transcriptions ===")
-        _print_transcription_stats()
+        _print_transcription_stats(target_lang)
 
     if FILTERED_FILE.exists():
         entries = [json.loads(l) for l in open(FILTERED_FILE)]
@@ -661,9 +654,14 @@ def cmd_stats():
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Kokoro German TTS training dataset pipeline",
+        description="Kokoro TTS training dataset pipeline",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
+    )
+    parser.add_argument(
+        "--lang",
+        default=DEFAULT_LANGUAGE,
+        help=f"Target language code (default: {DEFAULT_LANGUAGE})",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -720,17 +718,17 @@ def main():
     args = parser.parse_args()
 
     if args.command == "transcribe":
-        cmd_transcribe(sample=args.sample)
+        cmd_transcribe(sample=args.sample, target_lang=args.lang)
     elif args.command == "filter":
-        cmd_filter()
+        cmd_filter(target_lang=args.lang)
     elif args.command == "cluster":
         cmd_cluster()
     elif args.command == "drop":
         cmd_drop(speakers_to_drop=args.speakers)
     elif args.command == "format":
-        cmd_format(rename_speakers=args.rename_speakers)
+        cmd_format(target_lang=args.lang, rename_speakers=args.rename_speakers)
     elif args.command == "stats":
-        cmd_stats()
+        cmd_stats(target_lang=args.lang)
 
 
 if __name__ == "__main__":

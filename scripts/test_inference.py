@@ -155,7 +155,7 @@ def run_inference(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Test fine-tuned Kokoro German model",
+        description="Test fine-tuned Kokoro Polish model",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     group = parser.add_mutually_exclusive_group(required=True)

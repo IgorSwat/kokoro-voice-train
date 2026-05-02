@@ -1,4 +1,4 @@
-batch_size: 12
+batch_size: 1
 epochs: 10
 epochs_1st: 10
 epochs_2nd: 10
@@ -8,16 +8,16 @@ first_stage_path: "first_stage.pth"
 load_only_params: true
 second_stage_load_pretrained: false  # false = load from first_stage.pth (recommended)
 # ─────────────────────────────────────────────────────────────────────────────
-# Kokoro German Fine-Tuning Config
+# Kokoro Polish Fine-Tuning Config
 # ─────────────────────────────────────────────────────────────────────────────
 # Based on StyleTTS2 config_ft.yml, adapted for:
 # - Kokoro-82M architecture (ISTFTNet vocoder, no diffusion)
-# - German single-speaker fine-tuning (28h Daniel)
+# - Polish single-speaker fine-tuning (22h Mateusz)
 # - Conservative fine-tuning from pre-trained English checkpoint
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── Logging ──────────────────────────────────────────────────────────────────
-log_dir: "logs/kokoro-deutsch"
+log_dir: "logs/kokoro-polish"
 
 # ── Data ─────────────────────────────────────────────────────────────────────
 data_params:
@@ -25,8 +25,8 @@ data_params:
   val_data: "../training/val_list.txt"
   root_path: "../dataset/audio"
   OOD_data: "../training/OOD_phonemes.txt"
-  min_length: 50                    # min phoneme sequence length (chars)
-  num_workers:  24                  # CPU workers for data loading
+  min_length: 8                    # min phoneme sequence length (chars)
+  num_workers:  12                  # CPU workers for data loading
 
 # ── Preprocessing ────────────────────────────────────────────────────────────
 preprocess_params:
