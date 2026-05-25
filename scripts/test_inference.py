@@ -1,25 +1,25 @@
 #!/usr/bin/env python3
 """
-Kokoro German: Test Inference
+Kokoro Polish: Test Inference
 ==============================
-Tests the fine-tuned Kokoro model with a German phonetic test set.
+Tests the fine-tuned Kokoro model with a Polish phonetic test set.
 
 Usage:
     # Convert checkpoint + run inference
     python scripts/test_inference.py \
-        --checkpoint StyleTTS2/logs/kokoro_german/epoch_1st_00002.pth \
-        --voicepack voices/dm_daniel_epoch3.pt \
-        --output-dir test_output/epoch3
+        --checkpoint StyleTTS2/logs/kokoro_polish/epoch_2nd_00002.pth \
+        --voicepack voices/pm_mateusz.pt \
+        --output-dir test_output/polish
 
     # Use a previously converted model
     python scripts/test_inference.py \
-        --model voices/kokoro_german_epoch3.pth \
-        --voicepack voices/dm_daniel_epoch3.pt
+        --model test_output/kokoro_polish_converted.pth \
+        --voicepack voices/pm_mateusz.pt
 
     # Run on CPU
     python scripts/test_inference.py \
-        --checkpoint StyleTTS2/logs/kokoro_german/epoch_1st_00002.pth \
-        --voicepack voices/dm_daniel_epoch3.pt \
+        --checkpoint StyleTTS2/logs/kokoro_polish/epoch_2nd_00002.pth \
+        --voicepack voices/pm_mateusz.pt \
         --device cpu
 """
 
@@ -33,22 +33,28 @@ _kokoro_submodule = _repo_root / "kokoro"
 if _kokoro_submodule.exists() and str(_kokoro_submodule) not in sys.path:
     sys.path.insert(0, str(_kokoro_submodule))
 
-# Standard German phonetic test set — covers all major pronunciation challenges
+# Standard Polish phonetic test set — covers nasal vowels, digraphs, and clusters
 TEST_SENTENCES = [
-    # 1. Umlauts (ä, ö, ü) and sch
-    "Schön, dass du da bist. Die Bücher liegen auf dem großen Tisch.",
-    # 2. Ich-Laut vs Ach-Laut (ç vs x)
-    "Ich mache mich auf den Weg nach Aachen, um auch nachts wach zu sein.",
-    # 3. Eszett (ß) and vowel length
-    "Er aß die Maße in der Straße, aber das Maß war voll.",
-    # 4. Zischlaute (z, ts) and consonant clusters
-    "Zwei weiße Zwerge zwängen sich zwischen zwei Zweige.",
-    # 5. Pf-Laute
-    "Ein Pfau pflegt seine Federn an der Pfütze.",
-    # 6. Prosody: questions and exclamations
-    "Warum hast du das getan? Das ist ja unglaublich!",
-    # 7. Numbers
-    "Das kostet genau einhundertdreiundzwanzig Millionen Euro.",
+    # 1. Nasal vowels (ą, ę)
+    "Siema kurwy. Co tam u was słychać?",
+    "Cześć wszystkim. Witamy.",
+    "Ten Egzekutorcz to jest taka kurwa... No nie wytrzymie. Jebać!",
+    "Dzieńdoberek panowie. Co tam u was słychać?",
+    "Chłopaki z Softłer Menszyn dobrze robią, dobry przekaz leci. Tylko ten Egzekutorcz kurwa jebana wszystko psuje.",
+    "Dzieńdoberek panowie. Mam na imię Mateusz i jestem nowym, polskim głosem w text-tu-spicz. Zostałem wytrenowany na maszynce przez Pana Igora. Mam dla was ważną wiadomość do przekazania: jebać Metę i Egzekutorcza.",
+    # "Mąka i woda to podstawa dobrego ciasta.",
+    # "Będę w domu za godzinę, proszę poczekaj na mnie.",
+    # # 2. Digraphs (cz, sz, rz, ch, dz, dż, dź) and soft sounds (ś, ć, ź, ń, ó)
+    # "W Szczebrzeszynie chrząszcz brzmi w trzcinie.",
+    # "Zażółć gęślą jaźń.",
+    # "Cieszę się, że dzisiaj świeci słońce.",
+    # # 3. Consonant clusters
+    # "Bezwzględny morderca strzelał zza krzaka.",
+    # "Wpadł ptak do puszczy i piszczał.",
+    # # 4. Prosody: questions and exclamations
+    # "Dlaczego to zrobiłeś? To jest po prostu niesamowite!",
+    # # 5. Numbers
+    # "To kosztuje dokładnie sto dwadzieścia trzy miliony euro.",
 ]
 
 
@@ -100,7 +106,7 @@ def run_inference(
     output_dir: str,
     device: str = "auto",
 ):
-    """Run inference on the German test set."""
+    """Run inference on the Polish test set."""
     import torch
     import soundfile as sf
     from kokoro import KModel, KPipeline
@@ -115,8 +121,8 @@ def run_inference(
     kmodel = KModel(repo_id="hexgrad/Kokoro-82M", config=config_path, model=model_path)
     kmodel = kmodel.to(device).eval()
 
-    # Create pipeline with German lang_code
-    pipeline = KPipeline(lang_code="d", repo_id="hexgrad/Kokoro-82M", model=kmodel)
+    # Create pipeline with Polish lang_code
+    pipeline = KPipeline(lang_code="p", repo_id="hexgrad/Kokoro-82M", model=kmodel)
 
     # Load voicepack
     print(f"Loading voicepack: {voicepack_path}")
@@ -134,7 +140,7 @@ def run_inference(
             generator = pipeline(text, voice=voice, speed=1)
             all_audio = []
             for gs, ps, audio in generator:
-                print(f"  phonemes: {ps[:60]}...")
+                print(f"  phonemes: {ps}...")
                 all_audio.append(audio)
 
             if all_audio:
@@ -195,7 +201,7 @@ def main():
     if args.checkpoint:
         model_path = convert_checkpoint(
             args.checkpoint,
-            str(Path(args.output_dir) / "kokoro_german_converted.pth"),
+            str(Path(args.output_dir) / "kokoro_polish_converted.pth"),
         )
     else:
         model_path = args.model

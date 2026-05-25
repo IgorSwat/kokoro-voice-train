@@ -55,8 +55,6 @@ F_MAX = 8000
 VAL_RATIO = 0.05
 RANDOM_SEED = 42
 
-DEFAULT_LANGUAGE = "pl"
-
 
 def cmd_prepare(target_lang: str):
     """Generate train/val lists and optionally precompute mels and F0."""
@@ -276,6 +274,10 @@ def cmd_precompute():
             # Ensure mono
             if waveform.shape[0] > 1:
                 waveform = waveform.mean(dim=0, keepdim=True)
+
+            # IMPORTANT: add padding (5000 samples) to match StyleTTS2's FilePathDataset._load_tensor
+            padding = torch.zeros((1, 5000))
+            waveform = torch.cat([padding, waveform, padding], dim=1)
 
             # Compute mel spectrogram
             mel = mel_transform(waveform)
@@ -644,8 +646,8 @@ def main():
     )
     parser.add_argument(
         "--lang",
-        default=DEFAULT_LANGUAGE,
-        help=f"Target language code (default: {DEFAULT_LANGUAGE})",
+        required=True,
+        help="Target language code (e.g., 'pl', 'de')",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
