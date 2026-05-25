@@ -7,7 +7,7 @@ from munch import Munch
 import numpy as np
 import torch
 
-torch.autograd.set_detect_anomaly(True)
+# torch.autograd.set_detect_anomaly(True)
 
 if getattr(torch, "_original_load", None) is None:
     torch._original_load = torch.load
@@ -404,15 +404,19 @@ def main(config_path):
 
             # compute the style of the entire utterance
             # this operation cannot be done in batch because of the avgpool layer (may need to work on masked avgpool)
-            ss = []
-            gs = []
-            for bib in range(len(mel_input_length)):
-                mel_length = int(mel_input_length[bib].item())
-                mel = mels[bib, :, : mel_input_length[bib]]
-                s = model.predictor_encoder(mel.unsqueeze(0).unsqueeze(1))
-                ss.append(s)
-                s = model.style_encoder(mel.unsqueeze(0).unsqueeze(1))
-                gs.append(s)
+            try:
+                ss = []
+                gs = []
+                for bib in range(len(mel_input_length)):
+                    mel_length = int(mel_input_length[bib].item())
+                    mel = mels[bib, :, : mel_input_length[bib]]
+                    s = model.predictor_encoder(mel.unsqueeze(0).unsqueeze(1))
+                    ss.append(s)
+                    s = model.style_encoder(mel.unsqueeze(0).unsqueeze(1))
+                    gs.append(s)
+            except Exception as e:
+                print(f"Skipping batch due to exception in style computation: {e}")
+                continue
 
             s_dur = torch.stack(ss).squeeze(1)  # global prosodic styles
             gs = torch.stack(gs).squeeze(1)  # global acoustic styles

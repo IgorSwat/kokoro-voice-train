@@ -65,7 +65,8 @@ class FilePathDataset(torch.utils.data.Dataset):
 
         # Kokoro PLBERT limits: max sequence length is 512, leaving 510 usable tokens
         self.data_list = [
-            d for d in self.data_list if len(self.text_cleaner(d[1])) <= 510
+            d for d in self.data_list 
+            if 6 <= len(self.text_cleaner(d[1])) <= 510
         ]
 
         self.df = pd.DataFrame(self.data_list)

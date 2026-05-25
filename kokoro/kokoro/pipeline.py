@@ -7,6 +7,13 @@ from typing import Callable, Generator, List, Optional, Tuple, Union
 import re
 import torch
 import os
+import sys
+from pathlib import Path
+
+# Add project root to sys.path to allow importing tools.phonemes
+_repo_root = Path(__file__).resolve().parents[2]
+if str(_repo_root) not in sys.path:
+    sys.path.append(str(_repo_root))
 
 ALIASES = {
     'en-us': 'a',
@@ -16,6 +23,7 @@ ALIASES = {
     'fr-fr': 'f',
     'hi': 'h',
     'it': 'i',
+    'pl': 'p',
     'pt-br': 'p',
     'ja': 'j',
     'zh': 'z',
@@ -32,7 +40,7 @@ LANG_CODES = dict(
     f='fr-fr',
     h='hi',
     i='it',
-    p='pt-br',
+    p='pl',
 
     # pip install misaki[ja]
     j='Japanese',
@@ -140,17 +148,14 @@ class KPipeline:
             except ImportError:
                 logger.error("You need to `pip install misaki[zh]` to use lang_code='z'")
                 raise
-        elif lang_code == 'd':
-            try:
-                from misaki import de
-                self.g2p = de.DEG2P()
-            except ImportError:
-                logger.error("You need to `pip install misaki[de]` to use lang_code='d'")
-                raise
         else:
             language = LANG_CODES[lang_code]
-            logger.warning(f"Using EspeakG2P(language='{language}'). Chunking logic not yet implemented, so long texts may be truncated unless you split them with '\\n'.")
-            self.g2p = espeak.EspeakG2P(language=language)
+            try:
+                from tools.phonemes.phonemizer import Phonemizer
+                self.g2p = Phonemizer(lang_code=language)
+            except ImportError:
+                logger.warning(f"Using EspeakG2P(language='{language}'). Chunking logic not yet implemented, so long texts may be truncated unless you split them with '\\n'.")
+                self.g2p = espeak.EspeakG2P(language=language)
 
     def load_single_voice(self, voice: str):
         if voice in self.voices:
@@ -440,7 +445,12 @@ class KPipeline:
                     if not chunk.strip():
                         continue
                         
-                    ps, _ = self.g2p(chunk)
+                    # Standard G2P returns (phonemes, tokens), but our Phonemizer.phonemize returns just a string
+                    if hasattr(self.g2p, 'phonemize'):
+                        ps = self.g2p.phonemize(chunk)
+                    else:
+                        ps, _ = self.g2p(chunk)
+                        
                     if not ps:
                         continue
                     elif len(ps) > 510:
